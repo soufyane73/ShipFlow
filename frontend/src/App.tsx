@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { Produits } from './components/Produits';
 import { Colis } from './components/Colis';
@@ -10,13 +10,35 @@ import { Reclamations } from './components/Reclamations';
 import { MesInformations } from './components/MesInformations';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { Toaster } from 'sonner@2.0.3';
+import { Login } from './components/Login';
+import { Toaster } from 'sonner';
 import { LanguageProvider } from './contexts/LanguageContext';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check for existing token
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+    setLoading(false);
+  }, []);
+
+  const handleLoginSuccess = (token: string) => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    setIsAuthenticated(false);
+  };
 
   const renderView = () => {
+    console.log('Current View:', currentView);
     switch (currentView) {
       case 'dashboard':
         return <Dashboard />;
@@ -40,6 +62,19 @@ export default function App() {
         return <Dashboard />;
     }
   };
+
+  if (loading) {
+    return <div className="h-screen flex items-center justify-center">Chargement...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LanguageProvider>
+        <Toaster position="top-right" richColors />
+        <Login onLoginSuccess={handleLoginSuccess} />
+      </LanguageProvider>
+    );
+  }
 
   return (
     <LanguageProvider>

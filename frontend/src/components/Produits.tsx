@@ -1,26 +1,125 @@
-import { useState } from 'react';
-import { Plus, Search, Filter, Edit, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Filter, Edit, Trash2, Loader2, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { getProducts, createProduct, updateProduct, deleteProduct, Product } from '../api/products';
+import { getCategories, Category } from '../api/categories';
 
 export function Produits() {
   const [showNewProduct, setShowNewProduct] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const produits = [
-    { id: 'PRD-001', nom: 'Ordinateur portable Dell XPS', categorie: 'Électronique', prix: '1299.00', stock: 45, poids: '1.5 kg', ref: 'DELL-XPS-15' },
-    { id: 'PRD-002', nom: 'iPhone 15 Pro', categorie: 'Électronique', prix: '1199.00', stock: 78, poids: '0.3 kg', ref: 'APPLE-IP15P' },
-    { id: 'PRD-003', nom: 'Chaise de bureau ergonomique', categorie: 'Mobilier', prix: '299.00', stock: 23, poids: '12 kg', ref: 'CHAIR-ERG-01' },
-    { id: 'PRD-004', nom: 'Lot papier A4 (500 feuilles)', categorie: 'Fournitures', prix: '5.99', stock: 156, poids: '2.5 kg', ref: 'PAPER-A4-500' },
-    { id: 'PRD-005', nom: 'Écran 27 pouces 4K', categorie: 'Électronique', prix: '449.00', stock: 34, poids: '5 kg', ref: 'MON-27-4K' },
-    { id: 'PRD-006', nom: 'Clavier mécanique RGB', categorie: 'Accessoires', prix: '129.00', stock: 67, poids: '0.8 kg', ref: 'KEY-MECH-RGB' },
-  ];
+  // API State
+  const [produits, setProduits] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Form State
+  const [formData, setFormData] = useState<Partial<Product>>({
+    nom: '',
+    reference: '',
+    categorie_id: '',
+    poids_moyen: 0,
+    prix: 0,
+    stock: 0
+  });
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    try {
+      const response = await getProducts(1, searchTerm);
+      setProduits(response.data);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Erreur: ${error.response?.status} - ${error.response?.data?.message || 'Erreur lors du chargement des produits'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const data = await getCategories();
+      setCategories(data);
+    } catch (error) {
+      console.error("Failed to load categories", error);
+    }
+  }
+
+  useEffect(() => {
+    fetchProducts();
+    fetchCategories();
+  }, [searchTerm]);
+
+  const resetForm = () => {
+    setFormData({
+      nom: '',
+      reference: '',
+      categorie_id: '',
+      poids_moyen: 0,
+      prix: 0,
+      stock: 0
+    });
+  }
+
+  const handleOpenCreate = () => {
+    resetForm();
+    setShowNewProduct(true);
+  }
+
+  const handleOpenEdit = (product: Product) => {
+    setFormData({
+      nom: product.nom,
+      reference: product.reference,
+      categorie_id: product.categorie_id,
+      poids_moyen: product.poids_moyen,
+      prix: product.prix || 0,
+      stock: product.stock || 0
+    });
+    setEditingProduct(product);
+  }
+
+  const handleDelete = async (id: string) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer ce produit ?')) {
+      try {
+        await deleteProduct(id);
+        toast.success('Produit supprimé avec succès');
+        fetchProducts(); // Refresh list
+      } catch (error) {
+        toast.error('Erreur lors de la suppression');
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      if (editingProduct) {
+        await updateProduct(editingProduct.id, formData);
+        toast.success('Produit mis à jour avec succès');
+        setEditingProduct(null);
+      } else {
+        await createProduct(formData);
+        toast.success('Produit créé avec succès');
+        setShowNewProduct(false);
+      }
+      fetchProducts();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Erreur: ${error.response?.data?.message || 'Une erreur est survenue'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-gray-900">Gestion des Produits</h1>
-        <button 
-          onClick={() => setShowNewProduct(true)}
+        <button
+          onClick={handleOpenCreate}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <Plus className="w-5 h-5" />
@@ -37,16 +136,17 @@ export function Produits() {
               <input
                 type="text"
                 placeholder="Rechercher un produit..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
           <select className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option>Toutes catégories</option>
-            <option>Électronique</option>
-            <option>Mobilier</option>
-            <option>Fournitures</option>
-            <option>Accessoires</option>
+            <option value="">Toutes catégories</option>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>{c.nom}</option>
+            ))}
           </select>
           <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
             <Filter className="w-5 h-5" />
@@ -57,210 +157,178 @@ export function Produits() {
 
       {/* Tableau des produits */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-6 py-3 text-left text-gray-600">ID</th>
-                <th className="px-6 py-3 text-left text-gray-600">Nom du produit</th>
-                <th className="px-6 py-3 text-left text-gray-600">Référence</th>
-                <th className="px-6 py-3 text-left text-gray-600">Catégorie</th>
-                <th className="px-6 py-3 text-left text-gray-600">Prix (€)</th>
-                <th className="px-6 py-3 text-left text-gray-600">Stock</th>
-                <th className="px-6 py-3 text-left text-gray-600">Poids</th>
-                <th className="px-6 py-3 text-left text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {produits.map((produit) => (
-                <tr key={produit.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-900">{produit.id}</td>
-                  <td className="px-6 py-4 text-gray-900">{produit.nom}</td>
-                  <td className="px-6 py-4 text-gray-600">{produit.ref}</td>
-                  <td className="px-6 py-4 text-gray-600">{produit.categorie}</td>
-                  <td className="px-6 py-4 text-gray-900">{produit.prix} €</td>
-                  <td className="px-6 py-4">
-                    <span className={`${produit.stock < 30 ? 'text-red-600' : 'text-gray-900'}`}>
-                      {produit.stock}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-600">{produit.poids}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => setEditingProduct(produit)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (confirm('Êtes-vous sûr de vouloir supprimer ce produit ?')) {
-                            toast.success('Produit supprimé avec succès');
-                          }
-                        }}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
+        {loading ? (
+          <div className="p-8 flex justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="px-6 py-3 text-left text-gray-600">ID</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Nom du produit</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Référence</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Catégorie</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Prix (€)</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Stock</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Poids</th>
+                  <th className="px-6 py-3 text-left text-gray-600">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {produits.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                      Aucun produit trouvé.
+                    </td>
+                  </tr>
+                ) : (
+                  produits.map((produit) => (
+                    <tr key={produit.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="px-6 py-4 text-gray-900 font-mono text-xs">{produit.id.substring(0, 8)}...</td>
+                      <td className="px-6 py-4 text-gray-900">{produit.nom}</td>
+                      <td className="px-6 py-4 text-gray-600">{produit.reference}</td>
+                      <td className="px-6 py-4 text-gray-600">{produit.categorie?.nom || '-'}</td>
+                      <td className="px-6 py-4 text-gray-900">{produit.prix || 0} €</td>
+                      <td className="px-6 py-4">
+                        <span className={`${(produit.stock || 0) < 30 ? 'text-red-600' : 'text-gray-900'}`}>
+                          {produit.stock || 0}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">{produit.poids_moyen} kg</td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOpenEdit(produit)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(produit.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Modal Nouveau Produit */}
-      {showNewProduct && (
+      {/* Modal Form (Shared for Create/Edit) */}
+      {(showNewProduct || editingProduct) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-gray-900">Ajouter un Nouveau Produit</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Nom du produit</label>
-                  <input type="text" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 mb-2">Référence</label>
-                  <input type="text" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Catégorie</label>
-                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>Électronique</option>
-                    <option>Mobilier</option>
-                    <option>Fournitures</option>
-                    <option>Accessoires</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-gray-700 mb-2">Prix (€)</label>
-                  <input type="number" step="0.01" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Stock initial</label>
-                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-gray-700 mb-2">Poids</label>
-                  <input type="text" placeholder="ex: 1.5 kg" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Description</label>
-                <textarea rows={3} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-              </div>
-            </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-              <button 
-                onClick={() => setShowNewProduct(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Ajouter
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-gray-900 text-xl font-semibold">
+                {editingProduct ? `Modifier ${editingProduct.nom}` : 'Ajouter un Nouveau Produit'}
+              </h2>
+              <button onClick={() => { setShowNewProduct(false); setEditingProduct(null); }} className="text-gray-500 hover:text-gray-700">
+                <X className="w-6 h-6" />
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Modal Modification Produit */}
-      {editingProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-gray-900">Modifier le Produit {editingProduct.id}</h2>
-            </div>
-            <div className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-gray-700 mb-2">Nom du produit</label>
-                  <input 
-                    type="text" 
-                    defaultValue={editingProduct.nom}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  <label className="block text-gray-700 mb-2 font-medium">Nom du produit <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.nom}
+                    onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-700 mb-2">Référence</label>
-                  <input 
-                    type="text" 
-                    defaultValue={editingProduct.ref}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  <label className="block text-gray-700 mb-2 font-medium">Référence</label>
+                  <input
+                    type="text"
+                    value={formData.reference}
+                    onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-gray-700 mb-2">Catégorie</label>
-                  <select 
-                    defaultValue={editingProduct.categorie}
+                  <label className="block text-gray-700 mb-2 font-medium">Catégorie</label>
+                  <select
+                    value={formData.categorie_id}
+                    onChange={(e) => setFormData({ ...formData, categorie_id: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option>Électronique</option>
-                    <option>Mobilier</option>
-                    <option>Fournitures</option>
-                    <option>Accessoires</option>
+                    <option value="">Sélectionner une catégorie</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.nom}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-gray-700 mb-2">Prix (€)</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    defaultValue={editingProduct.prix}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  <label className="block text-gray-700 mb-2 font-medium">Poids Moyen (kg)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.poids_moyen}
+                    onChange={(e) => setFormData({ ...formData, poids_moyen: parseFloat(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+
+              {/* Optional Fields (Not yet in Backend) */}
+              <div className="grid grid-cols-2 gap-4 bg-yellow-50 p-4 rounded-md border border-yellow-200">
+                <div className="col-span-2 text-xs text-yellow-700 mb-2">
+                  ⚠️ Ces champs ne sont pas encore sauvegardés dans la base de données actuelle
+                </div>
                 <div>
-                  <label className="block text-gray-700 mb-2">Stock</label>
-                  <input 
-                    type="number" 
-                    defaultValue={editingProduct.stock}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  <label className="block text-gray-700 mb-2 font-medium">Prix (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.prix}
+                    onChange={(e) => setFormData({ ...formData, prix: parseFloat(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-700 mb-2">Poids</label>
-                  <input 
-                    type="text" 
-                    defaultValue={editingProduct.poids}
-                    placeholder="ex: 1.5 kg" 
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  <label className="block text-gray-700 mb-2 font-medium">Stock initial</label>
+                  <input
+                    type="number"
+                    value={formData.stock}
+                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
-            </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-              <button 
-                onClick={() => setEditingProduct(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button 
-                onClick={() => {
-                  toast.success('Produit modifié avec succès');
-                  setEditingProduct(null);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Enregistrer
-              </button>
-            </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-gray-200 mt-6">
+                <button
+                  type="button"
+                  onClick={() => { setShowNewProduct(false); setEditingProduct(null); }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  disabled={isSubmitting}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editingProduct ? 'Mettre à jour' : 'Créer le produit'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
